@@ -1,36 +1,36 @@
-// swift-tools-version:5.6
+// swift-tools-version:6.2
 
 import PackageDescription
 
 let package = Package(
-  name: "composable-core-location",
+  name: "swift-core-location",
   platforms: [
-    .iOS(.v13),
-    .macOS(.v10_15),
-    .tvOS(.v13),
-    .watchOS(.v6),
+    .iOS(.v17),
+    .macOS(.v14),
+    .tvOS(.v17),
+    .watchOS(.v10),
   ],
   products: [
     .library(
-      name: "ComposableCoreLocation",
-      targets: ["ComposableCoreLocation"]
+      name: "CoreLocationClient",
+      targets: ["CoreLocationClient"]
     )
   ],
   dependencies: [
     .package(
-      url: "https://github.com/pointfreeco/swift-composable-architecture",
-      .upToNextMajor(from: "0.43.0"))
+      url: "https://github.com/pointfreeco/swift-dependencies",
+      from: "1.10.0")
   ],
   targets: [
     .target(
-      name: "ComposableCoreLocation",
+      name: "CoreLocationClient",
       dependencies: [
-        .product(name: "ComposableArchitecture", package: "swift-composable-architecture")
+        .product(name: "Dependencies", package: "swift-dependencies")
       ]
     ),
     .testTarget(
-      name: "ComposableCoreLocationTests",
-      dependencies: ["ComposableCoreLocation"]
+      name: "CoreLocationClientTests",
+      dependencies: ["CoreLocationClient"]
     ),
   ]
 )
