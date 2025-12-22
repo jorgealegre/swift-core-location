@@ -109,59 +109,59 @@ public struct LocationManagerClient: Sendable {
     }
   }
 
-  public var accuracyAuthorization: @Sendable () async -> AccuracyAuthorization?
+  public var accuracyAuthorization: @Sendable () -> AccuracyAuthorization?
 
-  public var authorizationStatus: @Sendable () async -> CLAuthorizationStatus
+  public var authorizationStatus: @Sendable () -> CLAuthorizationStatus
 
   public var delegate: @Sendable () async -> AsyncPublisher<AnyPublisher<Action, Never>>
 
-  public var dismissHeadingCalibrationDisplay: @Sendable () async -> Void
+  public var dismissHeadingCalibrationDisplay: @Sendable () -> Void
 
-  public var heading: @Sendable () async -> Heading?
+  public var heading: @Sendable () -> Heading?
 
   public var headingAvailable: @Sendable () -> Bool
 
   public var isRangingAvailable: @Sendable () -> Bool
 
-  public var location: @Sendable () async -> Location?
+  public var location: @Sendable () -> Location?
 
   public var locationServicesEnabled: @Sendable () -> Bool
 
-  public var maximumRegionMonitoringDistance: @Sendable () async -> CLLocationDistance
+  public var maximumRegionMonitoringDistance: @Sendable () -> CLLocationDistance
 
-  public var monitoredRegions: @Sendable () async -> Set<Region>
+  public var monitoredRegions: @Sendable () -> Set<Region>
 
-  public var requestAlwaysAuthorization: @Sendable () async -> Void
+  public var requestAlwaysAuthorization: @Sendable () -> Void
 
-  public var requestLocation: @Sendable () async -> Void
+  public var requestLocation: @Sendable () -> Void
 
-  public var requestWhenInUseAuthorization: @Sendable () async -> Void
+  public var requestWhenInUseAuthorization: @Sendable () -> Void
 
   public var requestTemporaryFullAccuracyAuthorization: @Sendable (String) async throws -> Void
 
-  public var set: @Sendable (Properties) async -> Void
+  public var set: @Sendable (Properties) -> Void
 
   public var significantLocationChangeMonitoringAvailable: @Sendable () -> Bool
 
-  public var startMonitoringForRegion: @Sendable (Region) async -> Void
+  public var startMonitoringForRegion: @Sendable (Region) -> Void
 
-  public var startMonitoringSignificantLocationChanges: @Sendable () async -> Void
+  public var startMonitoringSignificantLocationChanges: @Sendable () -> Void
 
-  public var startMonitoringVisits: @Sendable () async -> Void
+  public var startMonitoringVisits: @Sendable () -> Void
 
-  public var startUpdatingHeading: @Sendable () async -> Void
+  public var startUpdatingHeading: @Sendable () -> Void
 
-  public var startUpdatingLocation: @Sendable () async -> Void
+  public var startUpdatingLocation: @Sendable () -> Void
 
-  public var stopMonitoringForRegion: @Sendable (Region) async -> Void
+  public var stopMonitoringForRegion: @Sendable (Region) -> Void
 
-  public var stopMonitoringSignificantLocationChanges: @Sendable () async -> Void
+  public var stopMonitoringSignificantLocationChanges: @Sendable () -> Void
 
-  public var stopMonitoringVisits: @Sendable () async -> Void
+  public var stopMonitoringVisits: @Sendable () -> Void
 
-  public var stopUpdatingHeading: @Sendable () async -> Void
+  public var stopUpdatingHeading: @Sendable () -> Void
 
-  public var stopUpdatingLocation: @Sendable () async -> Void
+  public var stopUpdatingLocation: @Sendable () -> Void
 
   /// Updates the given properties of a uniquely identified `CLLocationManager`.
   public func set(
@@ -173,11 +173,11 @@ public struct LocationManagerClient: Sendable {
     headingOrientation: CLDeviceOrientation? = nil,
     pausesLocationUpdatesAutomatically: Bool? = nil,
     showsBackgroundLocationIndicator: Bool? = nil
-  ) async {
+  ) {
     #if os(macOS) || os(tvOS) || os(watchOS)
       return
     #else
-      await self.set(
+      self.set(
         Properties(
           activityType: activityType,
           allowsBackgroundLocationUpdates: allowsBackgroundLocationUpdates,

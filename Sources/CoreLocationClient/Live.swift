@@ -1,39 +1,81 @@
 @preconcurrency import Combine
 @preconcurrency import CoreLocation
 
+/// A class that retains the CLLocationManager and its delegate to ensure they stay alive.
+/// Created on main thread but can be accessed from any thread (CLLocationManager is thread-safe).
+private final class LocationManagerHolder: @unchecked Sendable {
+  let manager: CLLocationManager
+  let delegateSubject: PassthroughSubject<LocationManagerClient.Action, Never>
+  let locationDelegate: LocationManagerDelegate
+
+  init() {
+    if Thread.isMainThread {
+      self.manager = CLLocationManager()
+      self.delegateSubject = PassthroughSubject<LocationManagerClient.Action, Never>()
+      self.locationDelegate = LocationManagerDelegate(delegateSubject)
+      self.manager.delegate = locationDelegate
+    } else {
+      let result = DispatchQueue.main.sync {
+        let m = CLLocationManager()
+        let subject = PassthroughSubject<LocationManagerClient.Action, Never>()
+        let delegate = LocationManagerDelegate(subject)
+        m.delegate = delegate
+        return (m, subject, delegate)
+      }
+      self.manager = result.0
+      self.delegateSubject = result.1
+      self.locationDelegate = result.2
+    }
+  }
+
+  var delegateStream: AsyncPublisher<AnyPublisher<LocationManagerClient.Action, Never>> {
+    delegateSubject
+      .share()
+      .eraseToAnyPublisher()
+      .values
+  }
+}
+
 extension LocationManagerClient {
   /// The live implementation of the `LocationManagerClient`. This implementation creates a real
   /// `CLLocationManager` instance and directly interacts with the system's Core Location services.
   public static let live: Self = {
-    let implementation: LiveImplementation
-
-    if Thread.isMainThread {
-      implementation = MainActor.assumeIsolated {
-        LiveImplementation()
-      }
-    } else {
-      implementation = DispatchQueue.main.sync {
-        MainActor.assumeIsolated {
-          LiveImplementation()
+    // Create holder on main thread - this retains the manager and delegate
+    let holder: LocationManagerHolder = {
+      if Thread.isMainThread {
+        return LocationManagerHolder()
+      } else {
+        return DispatchQueue.main.sync {
+          LocationManagerHolder()
         }
       }
-    }
+    }()
 
     return Self(
       accuracyAuthorization: {
-        await implementation.accuracyAuthorization()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          AccuracyAuthorization(holder.manager.accuracyAuthorization)
+        #else
+          nil
+        #endif
       },
       authorizationStatus: {
-        await implementation.authorizationStatus()
+        holder.manager.authorizationStatus
       },
       delegate: {
-        await implementation.delegate()
+        holder.delegateStream
       },
       dismissHeadingCalibrationDisplay: {
-        await implementation.dismissHeadingCalibrationDisplay()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.dismissHeadingCalibrationDisplay()
+        #endif
       },
       heading: {
-        await implementation.heading()
+        #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.heading.map(Heading.init(rawValue:))
+        #else
+          nil
+        #endif
       },
       headingAvailable: {
         CLLocationManager.headingAvailable()
@@ -42,258 +84,142 @@ extension LocationManagerClient {
         CLLocationManager.isRangingAvailable()
       },
       location: {
-        await implementation.location()
+        holder.manager.location.map(Location.init(rawValue:))
       },
       locationServicesEnabled: CLLocationManager.locationServicesEnabled,
       maximumRegionMonitoringDistance: {
-        await implementation.maximumRegionMonitoringDistance()
+        #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
+          holder.manager.maximumRegionMonitoringDistance
+        #else
+          CLLocationDistanceMax
+        #endif
       },
       monitoredRegions: {
-        await implementation.monitoredRegions()
+        #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
+          Set(holder.manager.monitoredRegions.map(Region.init(rawValue:)))
+        #else
+          []
+        #endif
       },
       requestAlwaysAuthorization: {
-        await implementation.requestAlwaysAuthorization()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.requestAlwaysAuthorization()
+        #endif
       },
       requestLocation: {
-        await implementation.requestLocation()
+        holder.manager.requestLocation()
       },
       requestWhenInUseAuthorization: {
-        await implementation.requestWhenInUseAuthorization()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.requestWhenInUseAuthorization()
+        #endif
       },
       requestTemporaryFullAccuracyAuthorization: { purposeKey in
-        try await implementation.requestTemporaryFullAccuracyAuthorization(purposeKey: purposeKey)
+        try await withCheckedThrowingContinuation { continuation in
+          holder.manager.requestTemporaryFullAccuracyAuthorization(
+            withPurposeKey: purposeKey
+          ) { error in
+            if let error = error {
+              continuation.resume(throwing: error)
+            } else {
+              continuation.resume(returning: ())
+            }
+          }
+        }
       },
       set: { properties in
-        await implementation.set(properties: properties)
+        #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          if let activityType = properties.activityType {
+            holder.manager.activityType = activityType
+          }
+          if let allowsBackgroundLocationUpdates = properties.allowsBackgroundLocationUpdates {
+            holder.manager.allowsBackgroundLocationUpdates = allowsBackgroundLocationUpdates
+          }
+        #endif
+        #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          if let desiredAccuracy = properties.desiredAccuracy {
+            holder.manager.desiredAccuracy = desiredAccuracy
+          }
+          if let distanceFilter = properties.distanceFilter {
+            holder.manager.distanceFilter = distanceFilter
+          }
+        #endif
+        #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          if let headingFilter = properties.headingFilter {
+            holder.manager.headingFilter = headingFilter
+          }
+          if let headingOrientation = properties.headingOrientation {
+            holder.manager.headingOrientation = headingOrientation
+          }
+        #endif
+        #if os(iOS) || targetEnvironment(macCatalyst)
+          if let pausesLocationUpdatesAutomatically = properties
+            .pausesLocationUpdatesAutomatically
+          {
+            holder.manager.pausesLocationUpdatesAutomatically = pausesLocationUpdatesAutomatically
+          }
+          if let showsBackgroundLocationIndicator = properties.showsBackgroundLocationIndicator {
+            holder.manager.showsBackgroundLocationIndicator = showsBackgroundLocationIndicator
+          }
+        #endif
       },
       significantLocationChangeMonitoringAvailable: {
         CLLocationManager.significantLocationChangeMonitoringAvailable()
       },
       startMonitoringForRegion: { region in
-        await implementation.startMonitoringForRegion(region: region)
+        #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
+          holder.manager.startMonitoring(for: region.rawValue!)
+        #endif
       },
       startMonitoringSignificantLocationChanges: {
-        await implementation.startMonitoringSignificantLocationChanges()
+        #if os(iOS) || targetEnvironment(macCatalyst)
+          holder.manager.startMonitoringSignificantLocationChanges()
+        #endif
       },
       startMonitoringVisits: {
-        await implementation.startMonitoringVisits()
+        #if os(iOS) || targetEnvironment(macCatalyst)
+          holder.manager.startMonitoringVisits()
+        #endif
       },
       startUpdatingHeading: {
-        await implementation.startUpdatingHeading()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.startUpdatingHeading()
+        #endif
       },
       startUpdatingLocation: {
-        await implementation.startUpdatingLocation()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.startUpdatingLocation()
+        #endif
       },
       stopMonitoringForRegion: { region in
-        await implementation.stopMonitoringForRegion(region: region)
+        #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
+          holder.manager.stopMonitoring(for: region.rawValue!)
+        #endif
       },
       stopMonitoringSignificantLocationChanges: {
-        await implementation.stopMonitoringSignificantLocationChanges()
+        #if os(iOS) || targetEnvironment(macCatalyst)
+          holder.manager.stopMonitoringSignificantLocationChanges()
+        #endif
       },
       stopMonitoringVisits: {
-        await implementation.stopMonitoringVisits()
+        #if os(iOS) || targetEnvironment(macCatalyst)
+          holder.manager.stopMonitoringVisits()
+        #endif
       },
       stopUpdatingHeading: {
-        await implementation.stopUpdatingHeading()
+        #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.stopUpdatingHeading()
+        #endif
       },
       stopUpdatingLocation: {
-        await implementation.stopUpdatingLocation()
+        #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
+          holder.manager.stopUpdatingLocation()
+        #endif
       }
     )
   }()
 }
 
-/// The live implementation that owns the `CLLocationManager` and handles all interactions with it.
-/// This class is MainActor-isolated to ensure all Core Location operations happen on the main thread.
-@MainActor
-private final class LiveImplementation {
-  private let manager: CLLocationManager
-  private let delegateSubject: PassthroughSubject<LocationManagerClient.Action, Never>
-  private let locationDelegate: LocationManagerDelegate
-
-  init() {
-    self.manager = CLLocationManager()
-    self.delegateSubject = PassthroughSubject<LocationManagerClient.Action, Never>()
-    self.locationDelegate = LocationManagerDelegate(self.delegateSubject)
-    self.manager.delegate = self.locationDelegate
-  }
-
-  func accuracyAuthorization() -> AccuracyAuthorization? {
-    AccuracyAuthorization(manager.accuracyAuthorization)
-  }
-
-  func authorizationStatus() -> CLAuthorizationStatus {
-    manager.authorizationStatus
-  }
-
-  func delegate() -> AsyncPublisher<AnyPublisher<LocationManagerClient.Action, Never>> {
-    delegateSubject
-      .share()
-      .eraseToAnyPublisher()
-      .values
-  }
-
-  func dismissHeadingCalibrationDisplay() {
-    #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.dismissHeadingCalibrationDisplay()
-    #endif
-  }
-
-  func heading() -> Heading? {
-    #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      return manager.heading.map(Heading.init(rawValue:))
-    #else
-      return nil
-    #endif
-  }
-
-  func location() -> Location? {
-    manager.location.map(Location.init(rawValue:))
-  }
-
-  func maximumRegionMonitoringDistance() -> CLLocationDistance {
-    #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
-      return manager.maximumRegionMonitoringDistance
-    #else
-      return CLLocationDistanceMax
-    #endif
-  }
-
-  func monitoredRegions() -> Set<Region> {
-    #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
-      return Set(manager.monitoredRegions.map(Region.init(rawValue:)))
-    #else
-      return []
-    #endif
-  }
-
-  func requestAlwaysAuthorization() {
-    #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.requestAlwaysAuthorization()
-    #endif
-  }
-
-  func requestLocation() {
-    manager.requestLocation()
-  }
-
-  func requestWhenInUseAuthorization() {
-    #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.requestWhenInUseAuthorization()
-    #endif
-  }
-
-  func requestTemporaryFullAccuracyAuthorization(purposeKey: String) async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      manager.requestTemporaryFullAccuracyAuthorization(
-        withPurposeKey: purposeKey
-      ) { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume(returning: ())
-        }
-      }
-    }
-  }
-
-  func set(properties: LocationManagerClient.Properties) {
-    #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      if let activityType = properties.activityType {
-        manager.activityType = activityType
-      }
-      if let allowsBackgroundLocationUpdates = properties.allowsBackgroundLocationUpdates {
-        manager.allowsBackgroundLocationUpdates = allowsBackgroundLocationUpdates
-      }
-    #endif
-    #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      if let desiredAccuracy = properties.desiredAccuracy {
-        manager.desiredAccuracy = desiredAccuracy
-      }
-      if let distanceFilter = properties.distanceFilter {
-        manager.distanceFilter = distanceFilter
-      }
-    #endif
-    #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      if let headingFilter = properties.headingFilter {
-        manager.headingFilter = headingFilter
-      }
-      if let headingOrientation = properties.headingOrientation {
-        manager.headingOrientation = headingOrientation
-      }
-    #endif
-    #if os(iOS) || targetEnvironment(macCatalyst)
-      if let pausesLocationUpdatesAutomatically = properties
-        .pausesLocationUpdatesAutomatically
-      {
-        manager.pausesLocationUpdatesAutomatically = pausesLocationUpdatesAutomatically
-      }
-      if let showsBackgroundLocationIndicator = properties.showsBackgroundLocationIndicator {
-        manager.showsBackgroundLocationIndicator = showsBackgroundLocationIndicator
-      }
-    #endif
-  }
-
-  func startMonitoringForRegion(region: Region) {
-    #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
-      manager.startMonitoring(for: region.rawValue!)
-    #endif
-  }
-
-  func startMonitoringSignificantLocationChanges() {
-    #if os(iOS) || targetEnvironment(macCatalyst)
-      manager.startMonitoringSignificantLocationChanges()
-    #endif
-  }
-
-  func startMonitoringVisits() {
-    #if os(iOS) || targetEnvironment(macCatalyst)
-      manager.startMonitoringVisits()
-    #endif
-  }
-
-  func startUpdatingHeading() {
-    #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.startUpdatingHeading()
-    #endif
-  }
-
-  func startUpdatingLocation() {
-    #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.startUpdatingLocation()
-    #endif
-  }
-
-  func stopMonitoringForRegion(region: Region) {
-    #if os(iOS) || os(macOS) || targetEnvironment(macCatalyst)
-      manager.stopMonitoring(for: region.rawValue!)
-    #endif
-  }
-
-  func stopMonitoringSignificantLocationChanges() {
-    #if os(iOS) || targetEnvironment(macCatalyst)
-      manager.stopMonitoringSignificantLocationChanges()
-    #endif
-  }
-
-  func stopMonitoringVisits() {
-    #if os(iOS) || targetEnvironment(macCatalyst)
-      manager.stopMonitoringVisits()
-    #endif
-  }
-
-  func stopUpdatingHeading() {
-    #if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.stopUpdatingHeading()
-    #endif
-  }
-
-  func stopUpdatingLocation() {
-    #if os(iOS) || os(macOS) || os(watchOS) || targetEnvironment(macCatalyst)
-      manager.stopUpdatingLocation()
-    #endif
-  }
-}
 
 /// The delegate class that receives `CLLocationManager` callbacks and forwards them to the subject.
 /// Note: This cannot be @MainActor because CLLocationManagerDelegate protocol is not actor-isolated.
