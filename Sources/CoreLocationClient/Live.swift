@@ -5,7 +5,19 @@ extension LocationManagerClient {
   /// The live implementation of the `LocationManagerClient`. This implementation creates a real
   /// `CLLocationManager` instance and directly interacts with the system's Core Location services.
   public static let live: Self = {
-    let implementation = LiveImplementation()
+    let implementation: LiveImplementation
+
+    if Thread.isMainThread {
+      implementation = MainActor.assumeIsolated {
+        LiveImplementation()
+      }
+    } else {
+      implementation = DispatchQueue.main.sync {
+        MainActor.assumeIsolated {
+          LiveImplementation()
+        }
+      }
+    }
 
     return Self(
       accuracyAuthorization: {
