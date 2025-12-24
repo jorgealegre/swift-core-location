@@ -59,8 +59,8 @@ private final class LiveLocationManager {
     manager.location.map(Location.init(rawValue:))
   }
 
-  func locationServicesEnabled() -> Bool {
-    CLLocationManager.locationServicesEnabled()
+  func locationServicesEnabled() async -> Bool {
+    await Task.detached { CLLocationManager.locationServicesEnabled() }.value
   }
 
   func maximumRegionMonitoringDistance() -> CLLocationDistance {
