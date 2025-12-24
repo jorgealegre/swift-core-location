@@ -73,9 +73,6 @@ extension LocationManagerClient {
     requestWhenInUseAuthorization: unimplemented(
       "LocationManagerClient.requestWhenInUseAuthorization"
     ),
-    requestTemporaryFullAccuracyAuthorization: unimplemented(
-      "LocationManagerClient.requestTemporaryFullAccuracyAuthorization"
-    ),
     set: unimplemented(
       "LocationManagerClient.set"
     ),
